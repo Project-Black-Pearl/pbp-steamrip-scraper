@@ -1,3 +1,6 @@
+#![windows_subsystem = "windows"]
+#![feature(option_result_contains)]
+
 use std::{env, path::Path, fs::{self, File}, io::Write};
 
 use scraper::{Html, Selector};
