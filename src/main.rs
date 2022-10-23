@@ -9,7 +9,7 @@ fn main() {
     let query: Vec<String> = env::args().collect();
 
     if query.len() < 2 {
-        println!(r#"You must provide a search query, e.g. "php_steamrip_scraper 'gta'""#);
+        println!(r#"You must provide a search query, e.g. "php_steamrip_scraper gta""#);
         std::process::exit(0);
     }
 
