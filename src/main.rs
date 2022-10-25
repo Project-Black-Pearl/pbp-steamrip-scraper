@@ -12,8 +12,8 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 3 {
-        println!(r#"You must provide a search query, e.g. "php_steamrip_scraper [query] [destination folder]""#);
+    if args.len() < 2 {
+        println!(r#"You must provide a search query, e.g. "php_1337x_scraper [query] [destination folder]""#);
         std::process::exit(0);
     }
 
@@ -22,7 +22,7 @@ fn main() {
 
     let cachestring = dest_dir.to_string();
     let cachedir = Path::new(&cachestring);
-    let filename = format!(r"{}\STEAMRIP_Cache.json", cachedir.display());
+    let filename = format!(r"{}\1337x_Cache.json", cachedir.display());
     let filepath = Path::new(&filename);
 
     if filepath.exists() {
@@ -30,25 +30,37 @@ fn main() {
         fs::remove_file(filepath).expect("Couldn't delete config file for re-caching");
     }
 
-    let url = format!("https://steamrip.com/?s={}", query);
+    fs::create_dir_all(cachedir).expect("Couldn't create config directory");
+    File::create(filepath).expect("Couldn't create config file");
+
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(filepath)
+        .expect("Opening file failed");
+
+    file.write_all(br#"{
+    response: [
+"#)
+        .expect("Couldn't write bytes to file");
+    
+    let url = format!("https://1337x.to/category-search/{}/Games/1/", query);
 
     let body = reqwest::blocking::get(url)
         .expect("GET Request failed.")
         .text()
-        .expect("Couldn't format body as text.");
+        .expect("Couldn't output HTML body as text.");
+
     let document = Html::parse_document(&body);
-    let selector = Selector::parse(r#"div > div > h2 > a"#).expect("Couldn't parse title.");
+    let selector = Selector::parse(r#"tbody > tr > td > a"#).expect("Couldn't parse list");
 
     let mut results: Vec<String> = vec![];
 
     for title in document.select(&selector) {
-        if title.html().contains("-free-download/") && results.len() < 6 {
+        if title.html().contains("/torrent/") && results.len() < 6 {
             results.push(format!(
-                "https://steamrip.com/{}",
-                title
-                    .value()
-                    .attr("href")
-                    .expect("Couldn't fetch game page.")
+                "https://1337x.to{}",
+                title.value().attr("href").unwrap()
             ));
         }
     }
@@ -56,21 +68,25 @@ fn main() {
     for entry in results {
         scan_page(entry, cachedir);
     }
+
+    file.write_all(br#"    ]
+}"#)
+        .expect("Couldn't write bytes to file");
 }
 
 fn scan_page(url: String, dest_dir: &Path) {
     let body = reqwest::blocking::get(url)
         .expect("GET Request failed.")
         .text()
-        .expect("Couldn't format body as text.");
+        .expect("Couldn't output HTML body as text.");
     let document = Html::parse_document(&body);
-    let title_selector = Selector::parse(r#"header > div > h1"#).expect("Couldn't parse title.");
-    let size_selector = Selector::parse(r#"div > ul > li"#).expect("Couldn't parse filesize.");
-    let download_selector = Selector::parse(r#"p > a"#).expect("Couldn't parse download.");
+    let title_selector = Selector::parse(r#"h1"#).expect("Couldn't parse title");
+    let size_selector = Selector::parse(r#"ul > li > span"#).expect("Couldn't parse filesize");
+    let magnet_selector = Selector::parse(r#"ul > li > a"#).expect("Couldn't parse magnets");
 
     let mut titles: Vec<String> = vec![];
     let mut sizes: Vec<String> = vec![];
-    let mut downloads: Vec<String> = vec![];
+    let mut magnets: Vec<String> = vec![];
 
     for title in document.select(&title_selector) {
         titles.push(title.inner_html());
@@ -81,17 +97,20 @@ fn scan_page(url: String, dest_dir: &Path) {
             || size.inner_html().contains("MB")
             || size.inner_html().contains("KB")
         {
-            sizes.push("Size not available for this distributor".to_string());
+            let html = size.inner_html();
+            let split: Vec<&str> = html.split('<').into_iter().collect();
+            let size = split[0];
+            sizes.push(size.to_string());
         }
     }
 
-    for download in document.select(&download_selector) {
-        if download.inner_html().contains("DOWNLOAD HERE") {
-            downloads.push(
-                download
+    for magnet in document.select(&magnet_selector) {
+        if magnet.inner_html().contains("Magnet Download") {
+            magnets.push(
+                magnet
                     .value()
                     .attr("href")
-                    .expect("Couldn't append download to vector.")
+                    .expect("Couldn't push magnets to vector")
                     .to_string(),
             )
         }
@@ -99,31 +118,23 @@ fn scan_page(url: String, dest_dir: &Path) {
 
     let title = &titles[0];
     let size = &sizes[0];
-    let download = &downloads[0];
+    let magnet = &magnets[0];
 
-    write_to_json(title.to_string(), size.to_string(), download.to_string(), dest_dir);
+    write_to_json(title.to_string(), size.to_string(), magnet.to_string(), dest_dir);
 }
 
 fn write_to_json(title: String, size: String, magnet: String, dest_dir: &Path) {
     println!("Caching: {}", title);
     let jsoncontent = format!(
-        r#"{{ "title": "{}", "size": "{}", "download": "{}" }}
+        r#"        {{ "title": "{}", "size": "{}", "download": "{}" }}
 "#,
         title, size, magnet
     );
 
     let dir_string = dest_dir;
     let dir_path = Path::new(&dir_string);
-    let file_string = format!(r"{}\STEAMRIP_Cache.json", dir_path.display());
+    let file_string = format!(r"{}\1337x_Cache.json", dir_path.display());
     let file_path = Path::new(&file_string);
-
-    if !dir_path.exists() {
-        fs::create_dir_all(dir_path).expect("Couldn't create config directory");
-    }
-
-    if !file_path.exists() {
-        File::create(file_path).expect("Couldn't create config file");
-    }
 
     let mut file = fs::OpenOptions::new()
         .write(true)
